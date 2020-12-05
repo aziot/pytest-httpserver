@@ -8,7 +8,7 @@ from collections import defaultdict
 from enum import Enum
 from contextlib import suppress, contextmanager
 from copy import copy
-from typing import Any, Callable, Mapping, Optional, Union, Pattern
+from typing import Any, Callable, List, Mapping, Optional, Union, Pattern
 from ssl import SSLContext
 import abc
 
@@ -62,6 +62,22 @@ class NoMethodFoundForMatchingHeaderValueError(Error):
     """
 
     pass
+
+
+# Note:
+# The following class can be a namedtuple but collections.namedtuple's attributes are not
+# typed and it is better to have a typed object here, it helps the developer using an IDE.
+# Dataclasses have no [0] access.
+# typing.NamedTuple would be perfect but that is from python 3.7 and we want to support older python versions
+
+class LogEntry:
+    def __init__(self, request: Request, response: Response):
+        self.request = request
+        self.response = response
+        self._tuple = (self.request, self.response)
+
+    def __getitem__(self, idx):
+        return self._tuple[idx]
 
 
 class WaitingSettings:
@@ -438,6 +454,7 @@ class RequestHandler:
     def __init__(self, matcher: RequestMatcher):
         self.matcher = matcher
         self.request_handler = None
+        self.calls: List[LogEntry] = []
 
     def respond(self, request: Request) -> Response:
         """
@@ -472,6 +489,8 @@ class RequestHandler:
         response_data = json.dumps(response_json, indent=4)
         self.respond_with_data(response_data, status, headers, content_type=content_type)
 
+        return self
+
     def respond_with_data(
             self,
             response_data: Union[str, bytes] = "",
@@ -497,6 +516,8 @@ class RequestHandler:
 
         self.request_handler = handler
 
+        return self
+
     def respond_with_response(self, response: Response):
         """
         Registers a respond handler function which responds the specified response object.
@@ -513,6 +534,8 @@ class RequestHandler:
         The function will receive the request object and must return with the response object.
         """
         self.request_handler = func
+
+        return self
 
 
 class RequestHandlerList(list):
@@ -1014,6 +1037,7 @@ class HTTPServer:   # pylint: disable=too-many-instance-attributes
         if isinstance(response, str):
             response = Response(response)
 
+        handler.calls.append(LogEntry(request, response))
         return response
 
     def _set_waiting_result(self, value: bool) -> None:
