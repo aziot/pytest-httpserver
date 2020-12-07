@@ -64,20 +64,23 @@ class NoMethodFoundForMatchingHeaderValueError(Error):
     pass
 
 
-# Note:
-# The following class can be a namedtuple but collections.namedtuple's attributes are not
-# typed and it is better to have a typed object here, it helps the developer using an IDE.
-# Dataclasses have no [0] access.
-# typing.NamedTuple would be perfect but that is from python 3.7 and we want to support older python versions
+class Log(list):
+    def query(self, attr_name: str):
+        retval = []
+        for obj in self:
+            retval.append(getattr(obj, attr_name))
+        return retval
 
-class LogEntry:
-    def __init__(self, request: Request, response: Response):
-        self.request = request
-        self.response = response
-        self._tuple = (self.request, self.response)
+    @property
+    def data(self):
+        return self.query("data")
 
-    def __getitem__(self, idx):
-        return self._tuple[idx]
+    @property
+    def json(self):
+        retval = []
+        for obj in self:
+            retval.append(json.loads(obj.data.decode(obj.charset)))
+        return retval
 
 
 class WaitingSettings:
@@ -454,7 +457,8 @@ class RequestHandler:
     def __init__(self, matcher: RequestMatcher):
         self.matcher = matcher
         self.request_handler = None
-        self.calls: List[LogEntry] = []
+        self.requests_log = Log()
+        self.responses_log = Log()
 
     def respond(self, request: Request) -> Response:
         """
@@ -536,6 +540,10 @@ class RequestHandler:
         self.request_handler = func
 
         return self
+
+    def append_log(self, request: Request, response: Response):
+        self.requests_log.append(request)
+        self.responses_log.append(response)
 
 
 class RequestHandlerList(list):
@@ -1037,7 +1045,7 @@ class HTTPServer:   # pylint: disable=too-many-instance-attributes
         if isinstance(response, str):
             response = Response(response)
 
-        handler.calls.append(LogEntry(request, response))
+        handler.append_log(request, response)
         return response
 
     def _set_waiting_result(self, value: bool) -> None:
